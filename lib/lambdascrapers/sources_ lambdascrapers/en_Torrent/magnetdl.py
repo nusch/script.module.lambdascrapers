@@ -83,7 +83,7 @@ class source:
                             'url': url,
                             'direct': False,
                             'debridonly': False,
-                            'info': siz+' '+nam,
+                            'info': siz+'|'+nam,
                         })  
             return sources
         except:
