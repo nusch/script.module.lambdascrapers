@@ -19,11 +19,11 @@ class source:
     def __init__(self):
         self.priority = 1
         self.language = ['en']
-        self.domains = ['rlsbb.to']
-        self.base_link = 'http://rlsbb.to'
-        self.search_base_link = 'http://search.rlsbb.to'
-        self.search_cookie = 'serach_mode=rlsbb'
-        self.search_link = '/lib/search526049.php?phrase=%s&pindex=1&content=true'
+        self.domains = ['rlsbb.to']             
+        self.base_link = 'http://rlsbb.to/'     # http//search.rlsbb.to doesn't exist and .ru is too long
+
+    # tried with cfscrape on rlsbb.ru to get cf cookies, but toooooo long (mini 15 sec to get them).
+    # lucky we have choice here.
 
     def movie(self, imdb, title, localtitle, aliases, year):
         try:
@@ -61,71 +61,72 @@ class source:
 
     def sources(self, url, hostDict, hostprDict):
         try:
+            log_utils.log("rlsbb debug")
+            
+            #base = self.base_link + "/"
             sources = []
 
             if url == None: return sources
 
             if debrid.status() == False: raise Exception()
 
-            data = urlparse.parse_qs(url)         
+            data = urlparse.parse_qs(url)   
+            log_utils.log("data : " + str(data))      
             data = dict([(i, data[i][0]) if data[i] else (i, '') for i in data])        
             title = data['tvshowtitle'] if 'tvshowtitle' in data else data['title']
             hdlr = 'S%02dE%02d' % (int(data['season']), int(data['episode'])) if 'tvshowtitle' in data else data['year']
             premDate = ''
             
-            query = '%s S%02dE%02d' % (
-            data['tvshowtitle'], int(data['season']), int(data['episode'])) if 'tvshowtitle' in data else '%s %s' % (
-            data['title'], data['year'])
-            query = re.sub('(\\\|/| -|:|;|\*|\?|"|\'|<|>|\|)', '', query)
+            querys = []
+            r      = None
 
-            query = query.replace("&", "and")
-            query = query.replace("  ", " ")
-            query = query.replace(" ", "-")
-            
-            url = self.search_link % urllib.quote_plus(query)
-            url = urlparse.urljoin(self.base_link, url)
+            # TVshows
+            if 'tvshowtitle' in data:   
 
-            url = "http://rlsbb.to/" + query                                # this overwrites a bunch of previous lines!
-            if 'tvshowtitle' not in data: url = url + "-1080p"				# NB: I don't think this works anymore! 2b-checked. 
+                log_utils.log("TV show")
+                
+                # test 1 - tvshowtitle + season and episode
+                querys.append('%s-S%02dE%02d' % (data['tvshowtitle'], int(data['season']), int(data['episode'])))
+                # test 2 - tvshowtitle + year (ex : titans-2018 , more and more got this format)
+                querys.append('%s-%s-S%02dE%02d' % (data['tvshowtitle'], data['year'], int(data['season']), int(data['episode'])))
+                # test 3 - tvshowtatle + season only (ex ozark-S02, group of episodes)
+                querys.append('%s-S%02d' % (data['tvshowtitle'], int(data['season'])))
+                # test 4 - try with tvshowtitle + year and season (ex Insomnia-2018-S01)
+                querys.append('%s-%s-S%02d' % (data['tvshowtitle'], data['year'], int(data['season'])))
 
-            r = client.request(url)                                         # curl as DOM object
-            
-            if r == None and 'tvshowtitle' in data:
-                season = re.search('S(.*?)E', hdlr)
-                season = season.group(1)
-                query = title
-                query = re.sub('(\\\|/| -|:|;|\*|\?|"|\'|<|>|\|)', '', query)
-                query = query + "-S" + season
-                query = query.replace("&", "and")
-                query = query.replace("  ", " ")
-                query = query.replace(" ", "-")
-                url = "http://rlsbb.to/" + query
-                r = client.request(url)
+                log_utils.log("querys : " + str(querys))
+                
+                r = self.search(querys)
+
+            else:
+                log_utils.log("Movie")
+                #  Movie
+                querys.append('%s %s' % (data['title'], data['year']))
+                r = self.search(querys)
 
             # looks like some shows have had episodes from the current season released in s00e00 format before switching to YYYY-MM-DD
             # this causes the second fallback search above for just s00 to return results and stops it from searching by date (ex. http://rlsbb.to/vice-news-tonight-s02)
             # so loop here if no items found on first pass and force date search second time around
+            # This works till now, so only minor changes 
             for loopCount in range(0,2):
-                if loopCount == 1 or (r == None and 'tvshowtitle' in data):                     # s00e00 serial failed: try again with YYYY-MM-DD
+                #querys.clear()     # pyhton 3
+                querys = []
+
+                if loopCount == 1 or (r == None and 'tvshowtitle' in data) :                     # s00e00 serial failed: try again with YYYY-MM-DD
                     # http://rlsbb.to/the-daily-show-2018-07-24                                 ... example landing urls
                     # http://rlsbb.to/stephen-colbert-2018-07-24                                ... case and "date dots" get fixed by rlsbb
-                    #query= re.sub('(\\\|/| -|:|;|\*|\?|"|\'|<|>|\|)','',data['tvshowtitle'])   # this RE copied from above is just trash
                     
-                    premDate = re.sub('[ \.]','-',data['premiered'])                            # date looks usually YYYY-MM-DD but dunno if always
-                    query = re.sub('[\\\\:;*?"<>|/\-\']', '', data['tvshowtitle'])              # quadruple backslash = one backslash :p
-                    query = query.replace("&", " and ").replace("  ", " ").replace(" ", "-")    # throw in extra spaces around & just in case
-                    query = query + "-" + premDate                      
+                    premDate = re.sub('[ \.]','-',data['premiered'])
+                    query = re.sub('[\\\\:;*?"<>|/\-\']', '', data['tvshowtitle'])              
                     
-                    url = "http://rlsbb.to/" + query            
-                    url = url.replace('The-Late-Show-with-Stephen-Colbert','Stephen-Colbert')   # 
-                    #url = url.replace('Some-Specific-Show-Title-No2','Scene-Title2')           # shows I want...
-                    #url = url.replace('Some-Specific-Show-Title-No3','Scene-Title3')           #         ...but theTVDB title != Scene release
+                    querys.append(query + "-" + premDate)
 
-                    r = client.request(url)
-                    
+                    r = self.search(querys)
+
                 posts = client.parseDOM(r, "div", attrs={"class": "content"})   # get all <div class=content>...</div>
                 hostDict = hostprDict + hostDict                                # ?
                 items = []
+                
                 for post in posts:
                     try:
                         u = client.parseDOM(post, 'a', ret='href')              # get all <a href=..... </a>
@@ -183,6 +184,25 @@ class source:
             failure = traceback.format_exc()
             log_utils.log('RLSBB - Exception: \n' + str(failure))
             return sources
+    
+    def search(self, querys):
+        i = 0
+        result = None
+        while result == None and i < len(querys):
+
+            q = re.sub('(\\\|/| -|:|;|\*|\?|"|\'|<|>|\|)', '', querys[i])
+            q = q.replace("  ", " ").replace(" ", "-")
+            log_utils.log("query : " + q)
+                    
+            result = client.request(self.base_link + q)
+
+            if (result == None):
+                log_utils.log("test " + str(i) + " = None - trying test " + str(i+1))
+                i += 1
+            else:
+                log_utils.log("test " + str(i) + " Ok :" + str(len(result)))
+
+        return result
 
     def resolve(self, url):
         return url
