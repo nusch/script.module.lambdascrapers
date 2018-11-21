@@ -14,13 +14,17 @@ from resources.lib.modules import control
 from resources.lib.modules import debrid
 from resources.lib.modules import log_utils
 from resources.lib.modules import source_utils
+#from resources.lib.modules import cfscrape
 
 class source:
     def __init__(self):
         self.priority = 1
         self.language = ['en']
         self.domains = ['rlsbb.to']             
-        self.base_link = 'http://rlsbb.to/'     # http//search.rlsbb.to doesn't exist and .ru is too long
+        self.base_link = 'http://rlsbb.to/'     # http//search.rlsbb.to doesn't exist
+
+        #self.scraper = cfscrape.create_scraper()
+        # scraper is for .ru, but unfortuinately, search engine give kind of dynamic datatable whithout data usable from html
 
     # tried with cfscrape on rlsbb.ru to get cf cookies, but toooooo long (mini 15 sec to get them).
     # lucky we have choice here.
@@ -63,8 +67,10 @@ class source:
         try:
             log_utils.log("rlsbb debug")
             
-            #base = self.base_link + "/"
             sources = []
+            query_bases  = []
+            options = []
+            html    = None
 
             if url == None: return sources
 
@@ -73,44 +79,49 @@ class source:
             data = urlparse.parse_qs(url)   
             log_utils.log("data : " + str(data))      
             data = dict([(i, data[i][0]) if data[i] else (i, '') for i in data])        
-            title = data['tvshowtitle'] if 'tvshowtitle' in data else data['title']
+            title = (data['tvshowtitle'] if 'tvshowtitle' in data else data['title'])
             hdlr = 'S%02dE%02d' % (int(data['season']), int(data['episode'])) if 'tvshowtitle' in data else data['year']
             premDate = ''
             
-            querys = []
-            r      = None
+            r = None
 
             # TVshows
             if 'tvshowtitle' in data:   
 
-                log_utils.log("TV show")
+                # log_utils.log("RLSBB TV show")
                 
-                # test 1 - tvshowtitle + season and episode
-                querys.append('%s-S%02dE%02d' % (data['tvshowtitle'], int(data['season']), int(data['episode'])))
-                # test 2 - tvshowtitle + year (ex : titans-2018 , more and more got this format)
-                querys.append('%s-%s-S%02dE%02d' % (data['tvshowtitle'], data['year'], int(data['season']), int(data['episode'])))
-                # test 3 - tvshowtatle + season only (ex ozark-S02, group of episodes)
-                querys.append('%s-S%02d' % (data['tvshowtitle'], int(data['season'])))
-                # test 4 - try with tvshowtitle + year and season (ex Insomnia-2018-S01)
-                querys.append('%s-%s-S%02d' % (data['tvshowtitle'], data['year'], int(data['season'])))
+                # tvshowtitle
+                query_bases.append('%s ' % (data['tvshowtitle'].replace("-","")))  # (ex 9-1-1 become 911)
+                # tvshowtitle + year (ex Titans-2018-s01e1 or Insomnia-2018-S01)
+                query_bases.append('%s %s ' % (data['tvshowtitle'], data['year']))
 
-                log_utils.log("querys : " + str(querys))
+                # season and episode (classic)
+                options.append('S%02dE%02d' % (int(data['season']), int(data['episode'])))
+                # season and episode1 - epsiode2 (two episodes at a time)
+                options.append('S%02dE%02d-E%02d' % (int(data['season']), int(data['episode']),   int(data['episode'])+1))
+                options.append('S%02dE%02d-E%02d' % (int(data['season']), int(data['episode'])-1, int(data['episode'])))
+                # season only (ex ozark-S02, group of episodes)
+                options.append('S%02d' % (int(data['season'])))
+
+                log_utils.log("RLSBB querys : " + str(options))
                 
-                r = self.search(querys)
+                r = self.search(query_bases, options)
 
             else:
-                log_utils.log("Movie")
+                #log_utils.log("RLSBB Movie")
                 #  Movie
-                querys.append('%s %s' % (data['title'], data['year']))
-                r = self.search(querys)
+                query_bases.append('%s ' % (data['title']))
+                options.append('%s' % (data['year']))
+                r = self.search(query_bases, options)
 
             # looks like some shows have had episodes from the current season released in s00e00 format before switching to YYYY-MM-DD
             # this causes the second fallback search above for just s00 to return results and stops it from searching by date (ex. http://rlsbb.to/vice-news-tonight-s02)
             # so loop here if no items found on first pass and force date search second time around
             # This works till now, so only minor changes 
             for loopCount in range(0,2):
-                #querys.clear()     # pyhton 3
-                querys = []
+                # query_bases.clear()     # pyhton 3
+                query_bases = []
+                options = []
 
                 if loopCount == 1 or (r == None and 'tvshowtitle' in data) :                     # s00e00 serial failed: try again with YYYY-MM-DD
                     # http://rlsbb.to/the-daily-show-2018-07-24                                 ... example landing urls
@@ -119,9 +130,10 @@ class source:
                     premDate = re.sub('[ \.]','-',data['premiered'])
                     query = re.sub('[\\\\:;*?"<>|/\-\']', '', data['tvshowtitle'])              
                     
-                    querys.append(query + "-" + premDate)
+                    query_bases.append(query)
+                    options.append(premDate)
 
-                    r = self.search(querys)
+                    r = self.search(query_bases,options)
 
                 posts = client.parseDOM(r, "div", attrs={"class": "content"})   # get all <div class=content>...</div>
                 hostDict = hostprDict + hostDict                                # ?
@@ -161,6 +173,9 @@ class source:
                     host = re.findall('([\w]+[.][\w]+)$', urlparse.urlparse(host2.strip().lower()).netloc)[0]
 
                     if not host in hostDict: raise Exception()
+                    host = client.replaceHTMLCodes(host)
+                    host = host.encode('utf-8')
+
                     if any(x in host2 for x in ['.rar', '.zip', '.iso']): continue
 
                     if '720p' in host2:
@@ -171,38 +186,44 @@ class source:
                         quality = 'SD'
 
                     info = ' | '.join(info)
-                    host = client.replaceHTMLCodes(host)
-                    host = host.encode('utf-8')
-                    sources.append({'source': host, 'quality': quality, 'language': 'en', 'url': host2, 'info': info, 'direct': False, 'debridonly': True})
+
+                    sources.append({'source': host, 'quality': quality, 'language': 'en', 'url': host2, 'info': info, 
+                                    'direct': False, 'debridonly': True})
                     # why is this hardcoded to debridonly=True? seems like overkill but maybe there's a resource-management reason?
                 except:
                     pass
+                log_utils.log("RLSBB sources = " + str(sources))
+
             check = [i for i in sources if not i['quality'] == 'CAM']
             if check: sources = check
-            return sources
         except:
             failure = traceback.format_exc()
             log_utils.log('RLSBB - Exception: \n' + str(failure))
-            return sources
+        return sources    # one return is enough !
     
-    def search(self, querys):
+    def search(self, query_bases, options):
         i = 0
         result = None
-        while result == None and i < len(querys):
+        for query_base in query_bases:
 
-            q = re.sub('(\\\|/| -|:|;|\*|\?|"|\'|<|>|\|)', '', querys[i])
+            q = re.sub('(\\\|/| -|:|;|\*|\?|"|\'|<|>|\|)', '', query_base)
             q = q.replace("  ", " ").replace(" ", "-")
-            log_utils.log("query : " + q)
+            
+            for option in options:
+                query = q + option
+                log_utils.log("RLSBB query : " + query)
+            
+                #result = self.scraper.get("http://search.rlsbb.ru/" + q).content        
+                result = client.request(self.base_link + query)
+
+                if (result != None):
+                    log_utils.log("RLSBB test " + str(i) + " Ok :" + str(len(result)))
+                    return result
+                else:
+                    log_utils.log("RLSBB test " + str(i) + " = None - trying test " + str(i+1))
+                    i += 1
                     
-            result = client.request(self.base_link + q)
-
-            if (result == None):
-                log_utils.log("test " + str(i) + " = None - trying test " + str(i+1))
-                i += 1
-            else:
-                log_utils.log("test " + str(i) + " Ok :" + str(len(result)))
-
-        return result
+        return None
 
     def resolve(self, url):
         return url
