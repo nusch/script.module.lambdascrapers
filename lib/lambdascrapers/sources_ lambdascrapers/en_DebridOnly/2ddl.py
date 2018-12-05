@@ -23,7 +23,7 @@ class source:
         self.language = ['en']
         self.domains = ['2ddl.ws'] 
         self.base_link = 'http://2ddl.ws/?s='
-        #self.search_link = '/search/%s/feed/rss2/'   # too long and often HS
+        #self.search_link = '/search/%s/feed/rss2/'
 
     def movie(self, imdb, title, localtitle, aliases, year):
         try:
@@ -127,7 +127,7 @@ class source:
                     item = str(post)
                     # have to filter on title and space become . in url name
                     # exemple "this is us" return everything with "us" , with filter return this.is.us
-                    if hdlr in item.upper() and title.upper() in item.upper().replace("."," "): 
+                    if data['episode'] in item.upper() and data['season'] in item.upper() and title.upper().replace(" ",".") in item.upper(): 
                         items.append(item)
                 except:
                     pass

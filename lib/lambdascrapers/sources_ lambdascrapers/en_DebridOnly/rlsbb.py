@@ -6,7 +6,7 @@
     Updated and refactored by someone.
     Originally created by others.
 '''
-import re,traceback,urllib,urlparse,json
+import re, traceback, urllib, urlparse, json, random, time
 
 from resources.lib.modules import cleantitle
 from resources.lib.modules import client
@@ -14,21 +14,21 @@ from resources.lib.modules import control
 from resources.lib.modules import debrid
 from resources.lib.modules import log_utils
 from resources.lib.modules import source_utils
-#from resources.lib.modules import cfscrape
+from resources.lib.modules import cfscrape
 
 class source:
     def __init__(self):
         self.priority = 1
         self.language = ['en']
-        self.domains = ['rlsbb.to']             
-        self.base_link = 'http://rlsbb.to/'     # http//search.rlsbb.to doesn't exist
+        self.domain = 'rlsbb.ru'            
+        self.base_link = 'http://rlsbb.ru'     # http//search.rlsbb.to doesn't exist
+        self.search_link = 'http://search.rlsbb.ru'
+        self.search_mode = '?serach_mode=rlsbb'
+        self.search_comp = 'lib/search6515260491260.php?phrase=%s&pindex=1&radit=0.%s'
+        # this search link give json with good names for urls
 
-        #self.scraper = cfscrape.create_scraper()
-        # scraper is for .ru, but unfortuinately, search engine give kind of dynamic datatable whithout data usable from html
-
-    # tried with cfscrape on rlsbb.ru to get cf cookies, but toooooo long (mini 15 sec to get them).
-    # lucky we have choice here.
-
+        self.scraper = cfscrape.create_scraper()
+        
     def movie(self, imdb, title, localtitle, aliases, year):
         try:
             url = {'imdb': imdb, 'title': title, 'year': year}
@@ -77,7 +77,7 @@ class source:
             if debrid.status() == False: raise Exception()
 
             data = urlparse.parse_qs(url)   
-            log_utils.log("data : " + str(data))      
+            #log_utils.log("data : " + str(data))      
             data = dict([(i, data[i][0]) if data[i] else (i, '') for i in data])        
             title = (data['tvshowtitle'] if 'tvshowtitle' in data else data['title'])
             hdlr = 'S%02dE%02d' % (int(data['season']), int(data['episode'])) if 'tvshowtitle' in data else data['year']
@@ -93,10 +93,12 @@ class source:
                 # tvshowtitle
                 query_bases.append('%s ' % (data['tvshowtitle'].replace("-","")))  # (ex 9-1-1 become 911)
                 # tvshowtitle + year (ex Titans-2018-s01e1 or Insomnia-2018-S01)
-                query_bases.append('%s %s ' % (data['tvshowtitle'], data['year']))
+                query_bases.append('%s %s ' % (data['tvshowtitle'].replace("-",""), data['year']))
 
                 # season and episode (classic)
                 options.append('S%02dE%02d' % (int(data['season']), int(data['episode'])))
+                # season space episode (for double episode like S02E02-E03)
+                options.append('S%02d E%02d' % (int(data['season']), int(data['episode'])))
                 # season and episode1 - epsiode2 (two episodes at a time)
                 options.append('S%02dE%02d-E%02d' % (int(data['season']), int(data['episode']),   int(data['episode'])+1))
                 options.append('S%02dE%02d-E%02d' % (int(data['season']), int(data['episode'])-1, int(data['episode'])))
@@ -107,6 +109,7 @@ class source:
                 
                 r = self.search(query_bases, options)
 
+                #log_utils.log("RLSBB r : " + r)
             else:
                 #log_utils.log("RLSBB Movie")
                 #  Movie
@@ -127,7 +130,7 @@ class source:
                     # http://rlsbb.to/the-daily-show-2018-07-24                                 ... example landing urls
                     # http://rlsbb.to/stephen-colbert-2018-07-24                                ... case and "date dots" get fixed by rlsbb
                     
-                    premDate = re.sub('[ \.]','-',data['premiered'])
+                    premDate = re.sub('[ \.]','-',data['premiered'])+" "
                     query = re.sub('[\\\\:;*?"<>|/\-\']', '', data['tvshowtitle'])              
                     
                     query_bases.append(query)
@@ -145,8 +148,10 @@ class source:
                         for i in u:                                             # foreach href url
                             try:
                                 name = str(i)
-                                if hdlr in name.upper(): items.append(name)
-                                elif len(premDate) > 0 and premDate in name.replace(".","-"): items.append(name)      # s00e00 serial failed: try again with YYYY-MM-DD
+                                if hdlr in name.upper() and title.upper().replace(" ",".") in name.upper():
+                                    items.append(name)
+                                elif len(premDate) > 0 and premDate in name.replace(".","-"): 
+                                    items.append(name)      # s00e00 serial failed: try again with YYYY-MM-DD
                                 # NOTE: the vast majority of rlsbb urls are just hashes! Future careful link grabbing would yield 2x or 3x results
                             except:
                                 pass
@@ -199,29 +204,54 @@ class source:
         except:
             failure = traceback.format_exc()
             log_utils.log('RLSBB - Exception: \n' + str(failure))
-        return sources    # one return is enough !
+        return sources # one return is enough !
     
     def search(self, query_bases, options):
         i = 0
+        j = 0
         result = None
-        for query_base in query_bases:
-
-            q = re.sub('(\\\|/| -|:|;|\*|\?|"|\'|<|>|\|)', '', query_base)
-            q = q.replace("  ", " ").replace(" ", "-")
+        for option in options:
             
-            for option in options:
-                query = q + option
-                log_utils.log("RLSBB query : " + query)
-            
-                #result = self.scraper.get("http://search.rlsbb.ru/" + q).content        
-                result = client.request(self.base_link + query)
+            for query_base in query_bases :
+                q = re.sub('(\\\|/| -|:|;|\*|\?|"|\'|<|>|\|)', '', query_base+option)
+                q = q.replace("  ", " ").replace(" ", "-")
 
-                if (result != None):
-                    log_utils.log("RLSBB test " + str(i) + " Ok :" + str(len(result)))
-                    return result
-                else:
-                    log_utils.log("RLSBB test " + str(i) + " = None - trying test " + str(i+1))
+                #url = urlparse.urljoin(self.search_link, self.search_comp) % (q, random.randint(00000000000000001, 99999999999999999))
+                url = urlparse.urljoin(self.base_link, q)
+
+                log_utils.log("RLSBB query : " + str(url))
+
+                html = self.scraper.get(url)
+                
+                if html.status_code == 200:
+                    return html.content
+                else: 
+                    log_utils.log("RLSBB test "+ str(i) + " return code : " + str(html.status_code) + "- next test " + str(i+1))
                     i += 1
+
+                #posts = json.loads(html)['results'][0]
+                # if not in first place then you should get crapy thing
+
+                # if posts['domain'] == self.domain:
+                #     # get url to get debrid links
+                #     link = urlparse.urljoin(self.base_link, posts['post_name'])
+                
+                #     result = self.scraper.get(link)
+                #     log_utils.log("RLSBB test " + str(i) + " : " + str(result.status_code))
+
+                #     # I got code 503 few times these days, but when retrying with a little delay I got code 200
+                #     while result.status_code == 503 and j < 5 :
+                #         time.sleep(0.5)
+                #         log_utils.log("RLSBB try test " + str(i))
+                #         result = self.scraper.get(link)
+                #         log_utils.log("RLSBB test " + str(i) + " : " + str(result.status_code))
+                #         j += 1
+
+                #     if result.status_code == 200:
+                #         return result.content
+                #     else: 
+                #         log_utils.log("RLSBB test "+ str(i) + " return code : " + result.status_code + "- next test " + str(i+1))
+                #         i += 1
                     
         return None
 
