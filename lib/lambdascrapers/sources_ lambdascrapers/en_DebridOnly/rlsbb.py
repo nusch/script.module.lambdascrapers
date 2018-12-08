@@ -197,7 +197,7 @@ class source:
                     # why is this hardcoded to debridonly=True? seems like overkill but maybe there's a resource-management reason?
                 except:
                     pass
-                log_utils.log("RLSBB sources = " + str(sources))
+                #log_utils.log("RLSBB sources = " + str(sources))
 
             check = [i for i in sources if not i['quality'] == 'CAM']
             if check: sources = check
