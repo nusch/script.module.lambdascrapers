@@ -21,7 +21,7 @@ class source:
         self.priority = 1
         self.language = ['en']
         self.domain = 'rlsbb.ru'            
-        self.base_link = 'http://rlsbb.ru'     # http//search.rlsbb.to doesn't exist
+        self.base_link = 'http://rlsbb.to'     # http//search.rlsbb.to doesn't exist
         self.search_link = 'http://search.rlsbb.ru'
         self.search_mode = '?serach_mode=rlsbb'
         self.search_comp = 'lib/search6515260491260.php?phrase=%s&pindex=1&radit=0.%s'
@@ -223,6 +223,14 @@ class source:
 
                 html = self.scraper.get(url)
                 
+                if html.status_code in (502, 503):
+                    # I got code 503 few times these days, but when retrying with a little delay I got code 200
+                    while result.status_code == 503 and j < 5 :
+                        time.sleep(0.5)
+                        log_utils.log("RLSBB try test " + str(i))
+                        html = self.scraper.get(url)
+                        log_utils.log("RLSBB test " + str(i) + " : " + str(result.status_code))
+                        j += 1
                 if html.status_code == 200:
                     return html.content
                 else: 
@@ -239,13 +247,13 @@ class source:
                 #     result = self.scraper.get(link)
                 #     log_utils.log("RLSBB test " + str(i) + " : " + str(result.status_code))
 
-                #     # I got code 503 few times these days, but when retrying with a little delay I got code 200
-                #     while result.status_code == 503 and j < 5 :
-                #         time.sleep(0.5)
-                #         log_utils.log("RLSBB try test " + str(i))
-                #         result = self.scraper.get(link)
-                #         log_utils.log("RLSBB test " + str(i) + " : " + str(result.status_code))
-                #         j += 1
+                    # # I got code 503 few times these days, but when retrying with a little delay I got code 200
+                    # while result.status_code == 503 and j < 5 :
+                    #     time.sleep(0.5)
+                    #     log_utils.log("RLSBB try test " + str(i))
+                    #     result = self.scraper.get(link)
+                    #     log_utils.log("RLSBB test " + str(i) + " : " + str(result.status_code))
+                    #     j += 1
 
                 #     if result.status_code == 200:
                 #         return result.content
