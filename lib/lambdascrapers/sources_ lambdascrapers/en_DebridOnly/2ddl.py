@@ -22,8 +22,8 @@ class source:
         self.priority = 1
         self.language = ['en']
         self.domains = ['2ddl.ws'] 
-        self.base_link = 'http://2ddl.ws'
-        self.search_link = '/search/%s/feed/rss2/'
+        self.base_link = 'http://2ddl.ws/?s='
+        #self.search_link = '/search/%s/feed/rss2/'
 
     def movie(self, imdb, title, localtitle, aliases, year):
         try:
@@ -63,6 +63,11 @@ class source:
     def sources(self, url, hostDict, hostprDict):
         try:
             sources = []
+            query_bases = []
+            options = []
+            html = ""
+
+            log_utils.log("2DDL debug")
 
             if url == None: return sources
 
@@ -70,21 +75,48 @@ class source:
 
             data = urlparse.parse_qs(url)
             data = dict([(i, data[i][0]) if data[i] else (i, '') for i in data])
-
             title = data['tvshowtitle'] if 'tvshowtitle' in data else data['title']
-
             hdlr = 'S%02dE%02d' % (int(data['season']), int(data['episode'])) if 'tvshowtitle' in data else data['year']
 
-            query = '%s S%02dE%02d' % (
-            data['tvshowtitle'], int(data['season']), int(data['episode'])) if 'tvshowtitle' in data else '%s %s' % (
-            data['title'], data['year'])
-            query = re.sub('(\\\|/| -|:|;|\*|\?|"|\'|<|>|\|)', ' ', query)
+            # TVshows
+            if 'tvshowtitle' in data:
+                
+                query_bases.append('%s ' % (data['tvshowtitle']))  # (ex 9-1-1 become 911)
+                # tvshowtitle + year (ex Titans-2018-s01e1 or Insomnia-2018-S01)
+                query_bases.append('%s %s ' % (data['tvshowtitle'], data['year']))
 
-            url = self.search_link % urllib.quote_plus(query)
-            url = urlparse.urljoin(self.base_link, url)
+                options.append('S%02d E%02d' % (int(data['season']), int(data['episode'])))
+                # season only (ex ozark-S02, group of episodes)
+                options.append('S%02d' % (int(data['season'])))
+                
+                html = self.search(query_bases, options)
 
-            html = client.request(url)
-            posts = client.parseDOM(html, 'item')
+            else:
+                #log_utils.log("2DDL Movie")
+                #  Movie
+                query_bases.append('%s ' % (data['title']))
+                options.append('%s' % (data['year']))
+                html = self.search(query_bases, options)
+
+            urls  = client.parseDOM(html, 'a', ret="href", attrs={"class":"more-link"})
+            #log_utils.log("2DDL urls : " + str(urls))
+
+            r = ""
+
+            for url in urls:
+
+                html = client.request(url)
+
+                while html != "":
+                    try:
+                        r += (html.split  ("<singlelink>"))[1].split("<Download>")[0]
+                        html    =  html.split("<Download>")[1]
+                    except:
+                        html = ""
+            
+            posts = client.parseDOM(r, 'a', ret='href') 
+
+            log_utils.log("2DDL posts = "+ str(posts))
 
             hostDict = hostprDict + hostDict
 
@@ -92,48 +124,40 @@ class source:
 
             for post in posts:
                 try:
-                    t = client.parseDOM(post, 'title')[0]
-                    u = client.parseDOM(post, 'a', ret='href')
-                    s = re.search('((?:\d+\.\d+|\d+\,\d+|\d+)\s*(?:GB|GiB|MB|MiB))', post)
-                    s = s.groups()[0] if s else '0'
-                    items += [(t, i, s) for i in u]
+                    item = str(post)
+                    # have to filter on title and space become . in url name
+                    # exemple "this is us" return everything with "us" , with filter return this.is.us
+                    if data['episode'] in item.upper() and data['season'] in item.upper() and title.upper().replace(" ",".") in item.upper(): 
+                        items.append(item)
                 except:
                     pass
+
+            log_utils.log("2DDL items : " + str(items))
 
             for item in items:
                 try:
 
-                    url = item[1]
-                    if any(x in url for x in ['.rar', '.zip', '.iso']): raise Exception()
+                    info = []
+                    url = str(item)
                     url = client.replaceHTMLCodes(url)
                     url = url.encode('utf-8')
 
-                    valid, host = source_utils.is_host_valid(url, hostDict)
-                    if not valid: raise Exception()
+                    host = url.replace("\\", "")
+                    host2 = host.strip('"')
+                    host = re.findall('([\w]+[.][\w]+)$', urlparse.urlparse(host2.strip().lower()).netloc)[0]
+
+                    if not host in hostDict: raise Exception()
                     host = client.replaceHTMLCodes(host)
                     host = host.encode('utf-8')
+                    
+                    if any(x in host2 for x in ['.rar', '.zip', '.iso']): continue
 
-                    name = item[0]
-                    name = client.replaceHTMLCodes(name)
-
-                    t = re.sub('(\.|\(|\[|\s)(\d{4}|S\d*E\d*|S\d*|3D)(\.|\)|\]|\s|)(.+|)', '', name, flags=re.I)
-
-                    if not cleantitle.get(t) == cleantitle.get(title): raise Exception()
-
-                    y = re.findall('[\.|\(|\[|\s](\d{4}|S\d*E\d*|S\d*)[\.|\)|\]|\s]', name)[-1].upper()
-
-                    if not y == hdlr: raise Exception()
-
-                    quality, info = source_utils.get_release_quality(name, url)
-
-                    try:
-                        size = re.findall('((?:\d+\.\d+|\d+\,\d+|\d+)\s*(?:GB|GiB|MB|MiB))', item[2])[-1]
-                        div = 1 if size.endswith(('GB', 'GiB')) else 1024
-                        size = float(re.sub('[^0-9|/.|/,]', '', size)) / div
-                        size = '%.2f GB' % size
-                        info.append(size)
-                    except:
-                        pass
+                    if '720p' in host2:
+                        quality = 'HD'
+                    elif '1080p' in host2:
+                        quality = '1080p'
+                    else:
+                        quality = 'SD'
 
                     info = ' | '.join(info)
 
@@ -144,12 +168,36 @@ class source:
 
             check = [i for i in sources if not i['quality'] == 'CAM']
             if check: sources = check
-
-            return sources
+            #log_utils.log("2DDL sources = " + str(sources))
         except:
             failure = traceback.format_exc()
             log_utils.log('2DDL - Exception: \n' + str(failure))
-            return sources
+
+        return sources    # one return is enough !
+
+    def search(self, query_bases, options):
+        i = 0
+        result = None
+        for query_base in query_bases:
+
+            q = re.sub('(\\\|/| -|:|;|\*|\?|"|\'|<|>|\|)', '', query_base)
+            q = q.replace("  ", " ").replace(" ", "+")
+            
+            for option in options:
+                query = q + option
+                log_utils.log("2DDL query : " + query)
+            
+                #result = self.scraper.get("http://search.rlsbb.ru/" + q).content        
+                result = client.request(self.base_link + q)
+
+                if (result != None):
+                    log_utils.log("2DDL test " + str(i) + " Ok :" + str(len(result)))
+                    return result
+                else:
+                    log_utils.log("2DDL test " + str(i) + " = None - trying test " + str(i+1))
+                    i += 1
+                    
+        return None
 
     def resolve(self, url):
         return url
