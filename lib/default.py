@@ -77,6 +77,10 @@ if mode == "toggleAllForeign":
     'filmwebbooster','iitv','movieneo','openkatalog','paczamy','segos','szukajkatv','trt']
     toggleAll(params['setting'], params['open_id'], sourcelist)
 
+if mode == "toggleAllTorrent":
+    sourcelist = ['1337x','bitlord','magnetdl','torrentapi']
+    toggleAll(params['setting'], params['open_id'], sourcelist)
+
 if mode == "Defaults":
     sourcelist = ['4kmovieto','1080P','bobmovies','bnwmovies',
     'cartoonhd','coolmoviezone','darewatch','divxcrawler',
