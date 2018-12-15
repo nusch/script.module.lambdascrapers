@@ -1,6 +1,6 @@
 Lambdascrapers Module Changelog:
-1.8.1
-- RLSBB Update
+1.8.2
+- Scraper updates
 1.8.0
 - Scraper updates
 1.7.0
