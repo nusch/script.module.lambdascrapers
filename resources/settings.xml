@@ -199,7 +199,7 @@
         <setting id="provider.myvideolink" type="bool" label="MYVIDEOLINK" default="false" /> <!--Placenta--> <!--Lambdascrapers-->
         <setting id="provider.phazeddl" type="bool" label="PHAZEDLL" default="false" /> <!--Incursion--> <!--Placenta--> <!--Lambdascrapers-->
         <setting id="provider.power" type="bool" label="POWER" default="false" /> <!--Lambdascrapers-->
-        <setting id="provider.rlsbb" type="bool" label="RLSBB" default="false" /> <!--Incursion--> <!--Placenta--> <!--Lambdascrapers-->
+        <setting id="provider.rlsbb" type="bool" label="RLSBB" default="true" /> <!--Incursion--> <!--Placenta--> <!--Lambdascrapers-->
         <setting id="provider.rlsscn" type="bool" label="RLSSCN" default="false" /> <!--Incursion--> <!--Placenta--> <!--Lambdascrapers-->
         <setting id="provider.scenerls" type="bool" label="SCENERLS" default="false" /> <!--Placenta--> <!--Lambdascrapers-->
         <setting id="provider.sceper" type="bool" label="SCEPER" default="false" /> <!--Lambdascrapers-->
